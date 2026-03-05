@@ -84,6 +84,9 @@ npx wrangler login
 npx wrangler d1 create nodewarden-db
 npx wrangler r2 bucket create nodewarden-attachments
 
+# 如需使用 KV 作为附件存储（仅在未配置 R2 时生效）
+npx wrangler kv namespace create ATTACHMENTS_KV
+
 # 部署
 npm run deploy 
 

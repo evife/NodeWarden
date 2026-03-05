@@ -6,12 +6,80 @@ import { createFileDownloadToken, verifyFileDownloadToken } from '../utils/jwt';
 import { cipherToResponse } from './ciphers';
 import { LIMITS } from '../config/limits';
 
+type AttachmentStorage = {
+  put: (path: string, file: File, meta: { cipherId: string; attachmentId: string }) => Promise<void>;
+  get: (path: string) => Promise<{ body: ReadableStream; size: number | null } | null>;
+  delete: (path: string) => Promise<void>;
+};
+
 // Format file size to human readable
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} Bytes`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(2)} KB`;
   if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+}
+
+function resolveAttachmentStorage(env: Env): AttachmentStorage | null {
+  if (env.ATTACHMENTS?.put && env.ATTACHMENTS?.get && env.ATTACHMENTS?.delete) {
+    return {
+      put: async (path, file, meta) => {
+        await env.ATTACHMENTS.put(path, file.stream(), {
+          httpMetadata: {
+            contentType: 'application/octet-stream',
+          },
+          customMetadata: {
+            cipherId: meta.cipherId,
+            attachmentId: meta.attachmentId,
+          },
+        });
+      },
+      get: async (path) => {
+        const object = await env.ATTACHMENTS.get(path);
+        if (!object) return null;
+        return { body: object.body, size: object.size };
+      },
+      delete: async (path) => {
+        await env.ATTACHMENTS.delete(path);
+      },
+    };
+  }
+
+  const kv = env.ATTACHMENTS_KV;
+  if (kv) {
+    return {
+      put: async (path, file, meta) => {
+        await kv.put(path, file.stream(), {
+          metadata: {
+            size: file.size,
+            cipherId: meta.cipherId,
+            attachmentId: meta.attachmentId,
+          },
+        });
+      },
+      get: async (path) => {
+        const result = await kv.getWithMetadata<{ size?: number }>(path, 'stream');
+        if (!result?.value) return null;
+        const size = typeof result.metadata?.size === 'number' ? result.metadata.size : null;
+        return { body: result.value, size };
+      },
+      delete: async (path) => {
+        await kv.delete(path);
+      },
+    };
+  }
+
+  return null;
+}
+
+export function isAttachmentsEnabled(env: Env): boolean {
+  return !!resolveAttachmentStorage(env);
+}
+
+export async function deleteAttachmentBlob(env: Env, path: string): Promise<void> {
+  const storage = resolveAttachmentStorage(env);
+  if (!storage) return;
+  await storage.delete(path);
 }
 
 // Get R2 object path for attachment
@@ -27,6 +95,10 @@ export async function handleCreateAttachment(
   userId: string,
   cipherId: string
 ): Promise<Response> {
+  if (!isAttachmentsEnabled(env)) {
+    return errorResponse('Attachments are disabled', 404);
+  }
+
   const storage = new StorageService(env.DB);
 
   // Verify cipher exists and belongs to user
@@ -98,6 +170,10 @@ export async function handleUploadAttachment(
   cipherId: string,
   attachmentId: string
 ): Promise<Response> {
+  if (!isAttachmentsEnabled(env)) {
+    return errorResponse('Attachments are disabled', 404);
+  }
+
   const storage = new StorageService(env.DB);
 
   // Verify cipher exists and belongs to user
@@ -136,17 +212,13 @@ export async function handleUploadAttachment(
     return errorResponse('File too large. Maximum size is 100MB', 413);
   }
 
-  // Store file in R2
+  const attachmentStorage = resolveAttachmentStorage(env);
+  if (!attachmentStorage) {
+    return errorResponse('Attachment storage not configured', 500);
+  }
+
   const path = getAttachmentPath(cipherId, attachmentId);
-  await env.ATTACHMENTS.put(path, file.stream(), {
-    httpMetadata: {
-      contentType: 'application/octet-stream',
-    },
-    customMetadata: {
-      cipherId: cipherId,
-      attachmentId: attachmentId,
-    },
-  });
+  await attachmentStorage.put(path, file, { cipherId, attachmentId });
 
   // Update attachment size if different
   const actualSize = file.size;
@@ -171,6 +243,10 @@ export async function handleGetAttachment(
   cipherId: string,
   attachmentId: string
 ): Promise<Response> {
+  if (!isAttachmentsEnabled(env)) {
+    return errorResponse('Attachments are disabled', 404);
+  }
+
   const storage = new StorageService(env.DB);
 
   // Verify cipher exists and belongs to user
@@ -211,6 +287,10 @@ export async function handlePublicDownloadAttachment(
   cipherId: string,
   attachmentId: string
 ): Promise<Response> {
+  if (!isAttachmentsEnabled(env)) {
+    return errorResponse('Attachments are disabled', 404);
+  }
+
   const secret = (env.JWT_SECRET || '').trim();
   if (!secret || secret.length < LIMITS.auth.jwtSecretMinLength || secret === DEFAULT_DEV_SECRET) {
     return errorResponse('Server configuration error', 500);
@@ -242,9 +322,13 @@ export async function handlePublicDownloadAttachment(
     return errorResponse('Attachment not found', 404);
   }
 
-  // Get file from R2
+  const attachmentStorage = resolveAttachmentStorage(env);
+  if (!attachmentStorage) {
+    return errorResponse('Attachment storage not configured', 500);
+  }
+
   const path = getAttachmentPath(cipherId, attachmentId);
-  const object = await env.ATTACHMENTS.get(path);
+  const object = await attachmentStorage.get(path);
 
   if (!object) {
     return errorResponse('Attachment file not found', 404);
@@ -255,10 +339,11 @@ export async function handlePublicDownloadAttachment(
     return errorResponse('Invalid or expired token', 401);
   }
 
+  const contentLength = object.size ?? attachment.size;
   return new Response(object.body, {
     headers: {
       'Content-Type': 'application/octet-stream',
-      'Content-Length': String(object.size),
+      'Content-Length': String(contentLength),
       'Cache-Control': 'private, no-cache',
     },
   });
@@ -273,6 +358,10 @@ export async function handleDeleteAttachment(
   cipherId: string,
   attachmentId: string
 ): Promise<Response> {
+  if (!isAttachmentsEnabled(env)) {
+    return errorResponse('Attachments are disabled', 404);
+  }
+
   const storage = new StorageService(env.DB);
 
   // Verify cipher exists and belongs to user
@@ -287,9 +376,13 @@ export async function handleDeleteAttachment(
     return errorResponse('Attachment not found', 404);
   }
 
-  // Delete file from R2
+  const attachmentStorage = resolveAttachmentStorage(env);
+  if (!attachmentStorage) {
+    return errorResponse('Attachment storage not configured', 500);
+  }
+
   const path = getAttachmentPath(cipherId, attachmentId);
-  await env.ATTACHMENTS.delete(path);
+  await attachmentStorage.delete(path);
 
   // Delete attachment metadata
   await storage.deleteAttachment(attachmentId);
@@ -319,7 +412,7 @@ export async function deleteAllAttachmentsForCipher(
 
   for (const attachment of attachments) {
     const path = getAttachmentPath(cipherId, attachment.id);
-    await env.ATTACHMENTS.delete(path);
+    await deleteAttachmentBlob(env, path);
     await storage.deleteAttachment(attachment.id);
   }
 }

@@ -2,7 +2,7 @@ import { Env, Cipher, CipherResponse, Attachment } from '../types';
 import { StorageService } from '../services/storage';
 import { jsonResponse, errorResponse } from '../utils/response';
 import { generateUUID } from '../utils/uuid';
-import { deleteAllAttachmentsForCipher } from './attachments';
+import { deleteAllAttachmentsForCipher, isAttachmentsEnabled } from './attachments';
 import { parsePagination, encodeContinuationToken } from '../utils/pagination';
 
 function getAliasedProp(source: any, aliases: string[]): { present: boolean; value: any } {
@@ -139,7 +139,9 @@ export async function handleGetCiphers(request: Request, env: Env, userId: strin
       : ciphers.filter(c => !c.deletedAt);
   }
 
-  const attachmentsByCipher = await storage.getAttachmentsByUserId(userId);
+  const attachmentsByCipher = isAttachmentsEnabled(env)
+    ? await storage.getAttachmentsByUserId(userId)
+    : new Map();
 
   // Get attachments for all ciphers
   const cipherResponses = [];
@@ -164,7 +166,9 @@ export async function handleGetCipher(request: Request, env: Env, userId: string
     return errorResponse('Cipher not found', 404);
   }
 
-  const attachments = await storage.getAttachmentsByCipher(cipher.id);
+  const attachments = isAttachmentsEnabled(env)
+    ? await storage.getAttachmentsByCipher(cipher.id)
+    : [];
   return jsonResponse(cipherToResponse(cipher, attachments));
 }
 

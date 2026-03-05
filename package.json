@@ -28,6 +28,9 @@
       },
       "ATTACHMENTS": {
         "description": "R2 bucket for storing file attachments"
+      },
+      "ATTACHMENTS_KV": {
+        "description": "KV namespace for storing file attachments when R2 is not configured"
       }
     }
   },

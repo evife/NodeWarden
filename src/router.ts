@@ -89,6 +89,7 @@ import {
   handleGetAttachment,
   handleDeleteAttachment,
   handlePublicDownloadAttachment,
+  isAttachmentsEnabled,
 } from './handlers/attachments';
 import {
   handleAdminListUsers,
@@ -408,6 +409,7 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
           'pm-19051-send-email-verification': false,
           'unauth-ui-refresh': true,
         },
+        attachments: isAttachmentsEnabled(env),
         object: 'config',
       });
     }

@@ -2,6 +2,7 @@ import { Env, User, Invite } from '../types';
 import { StorageService } from '../services/storage';
 import { jsonResponse, errorResponse } from '../utils/response';
 import { generateUUID } from '../utils/uuid';
+import { deleteAttachmentBlob } from './attachments';
 
 function isAdmin(user: User): boolean {
   return user.role === 'admin' && user.status === 'active';
@@ -260,7 +261,7 @@ export async function handleAdminDeleteUser(
   const attachmentMap = await storage.getAttachmentsByUserId(target.id);
   for (const [cipherId, attachments] of attachmentMap) {
     for (const att of attachments) {
-      await env.ATTACHMENTS.delete(`${cipherId}/${att.id}`);
+      await deleteAttachmentBlob(env, `${cipherId}/${att.id}`);
     }
   }
   // 2. Send files (keyed by sends/sendId/fileId)

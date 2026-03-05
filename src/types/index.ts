@@ -2,6 +2,7 @@
 export interface Env {
   DB: D1Database;
   ATTACHMENTS: R2Bucket;
+  ATTACHMENTS_KV?: KVNamespace;
   JWT_SECRET: string;
   TOTP_SECRET?: string;
 }
