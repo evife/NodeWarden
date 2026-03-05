@@ -65,7 +65,7 @@ function authRequestToResponse(origin: string, request: any): Record<string, unk
     masterPasswordHash: request.masterPasswordHash,
     creationDate: request.createdAt,
     responseDate: request.responseDate,
-    requestApproved: request.approved,
+    approved: request.approved,
     origin,
     object: 'auth-request',
   };
@@ -95,11 +95,9 @@ export async function handleCreateAuthRequest(request: Request, env: Env): Promi
     return errorResponse('User not found', 404);
   }
 
-  const device = await storage.getDeviceByUserIdAndIdentifier(user.id, deviceIdentifier);
-  if (!device || device.type !== clientDeviceType) {
-    return errorResponse('Auth request not found', 404);
-  }
-
+  // Bitwarden allows auth requests from unknown/new devices (e.g. fresh browser session)
+  // so we do not validate against existing devices here.
+  
   const now = new Date().toISOString();
   const authRequest = {
     id: generateUUID(),

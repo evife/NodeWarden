@@ -7,6 +7,12 @@ import { generateUUID } from '../utils/uuid';
 import { LIMITS } from '../config/limits';
 import { isTotpEnabled, verifyTotpToken } from '../utils/totp';
 import { createRecoveryCode, recoveryCodeEquals } from '../utils/recovery-code';
+import { sendLoginPush, sendLogOutPush } from '../services/push';
+
+function getDeviceIdentifier(request: Request): string | null {
+  return request.headers.get('Device-Identifier') || request.headers.get('X-Device-Identifier') || null;
+}
+
 
 function looksLikeEncString(value: string): boolean {
   if (!value) return false;
@@ -265,6 +271,7 @@ export async function handleUpdateProfile(request: Request, env: Env, userId: st
 
   try {
     await storage.saveUser(user);
+    await sendLoginPush(env, storage, userId, getDeviceIdentifier(request));
   } catch (error) {
     const msg = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
     if (msg.includes('unique') || msg.includes('constraint')) {
@@ -320,6 +327,7 @@ export async function handleSetKeys(request: Request, env: Env, userId: string):
   user.updatedAt = new Date().toISOString();
 
   await storage.saveUser(user);
+  await sendLoginPush(env, storage, userId, getDeviceIdentifier(request));
 
   return handleGetProfile(request, env, userId);
 }
@@ -385,6 +393,7 @@ export async function handleChangePassword(request: Request, env: Env, userId: s
   user.updatedAt = new Date().toISOString();
   await storage.saveUser(user);
   await storage.deleteRefreshTokensByUserId(user.id);
+  await sendLogOutPush(env, storage, userId, getDeviceIdentifier(request));
   await storage.createAuditLog({
     id: generateUUID(),
     actorUserId: user.id,
@@ -446,6 +455,7 @@ export async function handleSetTotpStatus(request: Request, env: Env, userId: st
     user.updatedAt = new Date().toISOString();
     await storage.saveUser(user);
     await storage.deleteRefreshTokensByUserId(user.id);
+    await sendLoginPush(env, storage, userId, getDeviceIdentifier(request));
     return jsonResponse({ enabled: true, recoveryCode: user.totpRecoveryCode, object: 'twoFactor' });
   }
 
@@ -460,6 +470,7 @@ export async function handleSetTotpStatus(request: Request, env: Env, userId: st
     user.updatedAt = new Date().toISOString();
     await storage.saveUser(user);
     await storage.deleteRefreshTokensByUserId(user.id);
+    await sendLoginPush(env, storage, userId, getDeviceIdentifier(request));
     return jsonResponse({ enabled: false, object: 'twoFactor' });
   }
 
@@ -564,6 +575,7 @@ export async function handleRecoverTwoFactor(request: Request, env: Env): Promis
   await storage.saveUser(user);
   await storage.deleteRefreshTokensByUserId(user.id);
   await rateLimit.clearLoginAttempts(recoverLimitKey);
+  await sendLoginPush(env, storage, user.id, getDeviceIdentifier(request));
 
   return jsonResponse({
     success: true,
