@@ -71,10 +71,13 @@ const SCHEMA_STATEMENTS: readonly string[] = [
 
   'CREATE TABLE IF NOT EXISTS devices (' +
   'user_id TEXT NOT NULL, device_identifier TEXT NOT NULL, name TEXT NOT NULL, type INTEGER NOT NULL, ' +
+  'push_token TEXT, push_uuid TEXT, ' +
   'created_at TEXT NOT NULL, updated_at TEXT NOT NULL, ' +
   'PRIMARY KEY (user_id, device_identifier), ' +
   'FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE)',
   'CREATE INDEX IF NOT EXISTS idx_devices_user_updated ON devices(user_id, updated_at)',
+  'ALTER TABLE devices ADD COLUMN push_token TEXT',
+  'ALTER TABLE devices ADD COLUMN push_uuid TEXT',
 
   'CREATE TABLE IF NOT EXISTS trusted_two_factor_device_tokens (' +
   'token TEXT PRIMARY KEY, user_id TEXT NOT NULL, device_identifier TEXT NOT NULL, expires_at INTEGER NOT NULL, ' +
@@ -973,7 +976,7 @@ export class StorageService {
   async getDevicesByUserId(userId: string): Promise<Device[]> {
     const res = await this.db
       .prepare(
-        'SELECT user_id, device_identifier, name, type, created_at, updated_at ' +
+        'SELECT user_id, device_identifier, name, type, push_token, push_uuid, created_at, updated_at ' +
         'FROM devices WHERE user_id = ? ORDER BY updated_at DESC'
       )
       .bind(userId)
@@ -985,7 +988,57 @@ export class StorageService {
       type: row.type,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
+      pushToken: row.push_token ?? null,
+      pushUuid: row.push_uuid ?? null,
     }));
+  }
+
+  async getDeviceByUserIdAndIdentifier(userId: string, deviceIdentifier: string): Promise<Device | null> {
+    const row = await this.db
+      .prepare(
+        'SELECT user_id, device_identifier, name, type, push_token, push_uuid, created_at, updated_at ' +
+        'FROM devices WHERE user_id = ? AND device_identifier = ? LIMIT 1'
+      )
+      .bind(userId, deviceIdentifier)
+      .first<any>();
+    if (!row) return null;
+    return {
+      userId: row.user_id,
+      deviceIdentifier: row.device_identifier,
+      name: row.name,
+      type: row.type,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+      pushToken: row.push_token ?? null,
+      pushUuid: row.push_uuid ?? null,
+    };
+  }
+
+  async updateDevicePushToken(
+    userId: string,
+    deviceIdentifier: string,
+    pushToken: string,
+    pushUuid: string | null
+  ): Promise<void> {
+    const now = new Date().toISOString();
+    await this.db.prepare(
+      'UPDATE devices SET push_token = ?, push_uuid = ?, updated_at = ? WHERE user_id = ? AND device_identifier = ?'
+    ).bind(pushToken, pushUuid, now, userId, deviceIdentifier).run();
+  }
+
+  async clearDevicePushToken(userId: string, deviceIdentifier: string): Promise<void> {
+    const now = new Date().toISOString();
+    await this.db.prepare(
+      'UPDATE devices SET push_token = NULL, updated_at = ? WHERE user_id = ? AND device_identifier = ?'
+    ).bind(now, userId, deviceIdentifier).run();
+  }
+
+  async userHasPushDevice(userId: string): Promise<boolean> {
+    const row = await this.db
+      .prepare('SELECT 1 FROM devices WHERE user_id = ? AND push_token IS NOT NULL LIMIT 1')
+      .bind(userId)
+      .first<{ '1': number }>();
+    return !!row;
   }
 
   async deleteDevice(userId: string, deviceIdentifier: string): Promise<boolean> {

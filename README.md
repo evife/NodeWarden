@@ -87,6 +87,15 @@ npx wrangler r2 bucket create nodewarden-attachments
 # 如需使用 KV 作为附件存储（仅在未配置 R2 时生效）
 npx wrangler kv namespace create ATTACHMENTS_KV
 
+# （可选）开启移动端推送：安装 ID/KEY 从 Bitwarden 申请
+# 申请地址：https://bitwarden.com/host/
+# 在 Cloudflare Workers 环境变量中设置：
+# PUSH_INSTALLATION_ID=xxxx
+# PUSH_INSTALLATION_KEY=xxxx
+# PUSH_ENABLED=true （可选，默认启用）
+# PUSH_RELAY_URI=https://push.bitwarden.com （可选）
+# PUSH_IDENTITY_URI=https://identity.bitwarden.com （可选）
+
 # 部署
 npm run deploy 
 
@@ -97,6 +106,24 @@ npm run deploy
 ```
 
 ---
+
+## 移动端推送（自动同步）
+
+NodeWarden 兼容 Vaultwarden 的推送中继实现，支持登录和密码项/其他条目新增与修改时的推送。
+
+**配置步骤：**
+1. 到 https://bitwarden.com/host/ 申请 Installation ID 和 Key  
+2. 在 Cloudflare Workers 环境变量中设置：
+   - `PUSH_INSTALLATION_ID`
+   - `PUSH_INSTALLATION_KEY`
+   - `PUSH_ENABLED`（可选，默认启用）
+   - `PUSH_RELAY_URI`（可选，默认 https://push.bitwarden.com）
+   - `PUSH_IDENTITY_URI`（可选，默认 https://identity.bitwarden.com）
+3. 重新登录移动端，让客户端上报 push token（必要时清理 App 数据）
+
+**注意：**
+- 推送仅对官方应用商店版本生效，F-Droid 等版本通常不含推送能力
+- 服务器需能访问 Bitwarden 推送中继服务（push.bitwarden.com）
 
 ## 本地开发
 

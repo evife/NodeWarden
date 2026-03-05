@@ -2,6 +2,7 @@ import { Env } from '../types';
 import { StorageService } from '../services/storage';
 import { errorResponse, jsonResponse } from '../utils/response';
 import { readKnownDeviceProbe } from '../utils/device';
+import { registerPushDevice } from '../services/push';
 
 // GET /api/devices/knowndevice
 // Compatible with Bitwarden/Vaultwarden behavior:
@@ -146,10 +147,32 @@ export async function handleUpdateDeviceToken(
   userId: string,
   deviceIdentifier: string
 ): Promise<Response> {
-  void request;
-  void env;
-  void userId;
-  void deviceIdentifier;
+  let body: any;
+  try {
+    body = await request.json();
+  } catch {
+    return errorResponse('Invalid JSON', 400);
+  }
+
+  const token = String(body?.pushToken ?? body?.push_token ?? body?.PushToken ?? '').trim();
+  if (!token) {
+    return errorResponse('pushToken is required', 400);
+  }
+
+  const storage = new StorageService(env.DB);
+  const device = await storage.getDeviceByUserIdAndIdentifier(userId, deviceIdentifier);
+  if (!device) {
+    return errorResponse('Device not found', 404);
+  }
+
+  if (device.pushToken === token && device.pushUuid) {
+    return new Response(null, { status: 200 });
+  }
+
+  const registered = await registerPushDevice(env, storage, userId, deviceIdentifier, token);
+  if (!registered) {
+    return errorResponse('Push registration failed', 502);
+  }
+
   return new Response(null, { status: 200 });
 }
-

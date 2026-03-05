@@ -4,6 +4,7 @@ import { jsonResponse, errorResponse } from '../utils/response';
 import { generateUUID } from '../utils/uuid';
 import { deleteAllAttachmentsForCipher, isAttachmentsEnabled } from './attachments';
 import { parsePagination, encodeContinuationToken } from '../utils/pagination';
+import { sendCipherPush, PushUpdateType } from '../services/push';
 
 function getAliasedProp(source: any, aliases: string[]): { present: boolean; value: any } {
   if (!source || typeof source !== 'object') return { present: false, value: undefined };
@@ -222,6 +223,10 @@ export async function handleCreateCipher(request: Request, env: Env, userId: str
   await storage.saveCipher(cipher);
   await storage.updateRevisionDate(userId);
 
+  const actingDeviceIdentifierRaw = request.headers.get('X-Device-Identifier');
+  const actingDeviceIdentifier = actingDeviceIdentifierRaw ? String(actingDeviceIdentifierRaw).trim() : null;
+  await sendCipherPush(env, storage, cipher, PushUpdateType.SyncCipherCreate, actingDeviceIdentifier);
+
   return jsonResponse(cipherToResponse(cipher), 200);
 }
 
@@ -282,6 +287,10 @@ export async function handleUpdateCipher(request: Request, env: Env, userId: str
 
   await storage.saveCipher(cipher);
   await storage.updateRevisionDate(userId);
+
+  const actingDeviceIdentifierRaw = request.headers.get('X-Device-Identifier');
+  const actingDeviceIdentifier = actingDeviceIdentifierRaw ? String(actingDeviceIdentifierRaw).trim() : null;
+  await sendCipherPush(env, storage, cipher, PushUpdateType.SyncCipherUpdate, actingDeviceIdentifier);
 
   return jsonResponse(cipherToResponse(cipher));
 }

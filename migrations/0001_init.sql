@@ -143,6 +143,8 @@ CREATE TABLE IF NOT EXISTS devices (
   device_identifier TEXT NOT NULL,
   name TEXT NOT NULL,
   type INTEGER NOT NULL,
+  push_token TEXT,
+  push_uuid TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   PRIMARY KEY (user_id, device_identifier),

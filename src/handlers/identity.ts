@@ -9,6 +9,7 @@ import { createRefreshToken } from '../utils/jwt';
 import { readAuthRequestDeviceInfo } from '../utils/device';
 import { createRecoveryCode, recoveryCodeEquals } from '../utils/recovery-code';
 import { issueSendAccessToken } from './sends';
+import { sendLoginPush } from '../services/push';
 
 const TWO_FACTOR_REMEMBER_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const TWO_FACTOR_PROVIDER_AUTHENTICATOR = 0;
@@ -226,6 +227,8 @@ export async function handleToken(request: Request, env: Env): Promise<Response>
 
     // Successful login - clear failed attempts
     await rateLimit.clearLoginAttempts(loginIdentifier);
+
+    await sendLoginPush(env, storage, user.id, deviceInfo.deviceIdentifier);
 
     const accessToken = await auth.generateAccessToken(user);
     const refreshToken = await auth.generateRefreshToken(user.id);

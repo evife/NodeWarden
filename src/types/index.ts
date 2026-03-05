@@ -5,6 +5,11 @@ export interface Env {
   ATTACHMENTS_KV?: KVNamespace;
   JWT_SECRET: string;
   TOTP_SECRET?: string;
+  PUSH_ENABLED?: string | boolean;
+  PUSH_INSTALLATION_ID?: string;
+  PUSH_INSTALLATION_KEY?: string;
+  PUSH_RELAY_URI?: string;
+  PUSH_IDENTITY_URI?: string;
 }
 
 export type UserRole = 'admin' | 'user';
@@ -183,6 +188,8 @@ export interface Device {
   type: number;
   createdAt: string;
   updatedAt: string;
+  pushToken?: string | null;
+  pushUuid?: string | null;
 }
 
 export interface TrustedDeviceTokenSummary {
