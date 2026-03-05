@@ -1,4 +1,4 @@
-import { User, Cipher, Folder, Attachment, Device, Invite, AuditLog, Send, SendAuthType, TrustedDeviceTokenSummary } from '../types';
+import { User, Cipher, Folder, Attachment, Device, Invite, AuditLog, Send, SendAuthType, TrustedDeviceTokenSummary, AuthRequest } from '../types';
 import { LIMITS } from '../config/limits';
 
 const TWO_FACTOR_REMEMBER_TTL_MS = 30 * 24 * 60 * 60 * 1000;
@@ -78,6 +78,14 @@ const SCHEMA_STATEMENTS: readonly string[] = [
   'CREATE INDEX IF NOT EXISTS idx_devices_user_updated ON devices(user_id, updated_at)',
   'ALTER TABLE devices ADD COLUMN push_token TEXT',
   'ALTER TABLE devices ADD COLUMN push_uuid TEXT',
+
+  'CREATE TABLE IF NOT EXISTS auth_requests (' +
+  'id TEXT PRIMARY KEY, user_id TEXT NOT NULL, request_device_identifier TEXT NOT NULL, request_device_type INTEGER NOT NULL, ' +
+  'request_ip TEXT NOT NULL, access_code TEXT NOT NULL, public_key TEXT NOT NULL, key TEXT, master_password_hash TEXT, ' +
+  'approved INTEGER, created_at TEXT NOT NULL, response_date TEXT, response_device_identifier TEXT, ' +
+  'FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE)',
+  'CREATE INDEX IF NOT EXISTS idx_auth_requests_user_created ON auth_requests(user_id, created_at)',
+  'CREATE INDEX IF NOT EXISTS idx_auth_requests_user_pending ON auth_requests(user_id, approved, created_at)',
 
   'CREATE TABLE IF NOT EXISTS trusted_two_factor_device_tokens (' +
   'token TEXT PRIMARY KEY, user_id TEXT NOT NULL, device_identifier TEXT NOT NULL, expires_at INTEGER NOT NULL, ' +
@@ -1047,6 +1055,123 @@ export class StorageService {
       .bind(userId, deviceIdentifier)
       .run();
     return Number(result.meta.changes ?? 0) > 0;
+  }
+
+  async createAuthRequest(request: AuthRequest): Promise<void> {
+    await this.db.prepare(
+      'INSERT INTO auth_requests(id, user_id, request_device_identifier, request_device_type, request_ip, access_code, public_key, key, master_password_hash, approved, created_at, response_date, response_device_identifier) ' +
+      'VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    ).bind(
+      request.id,
+      request.userId,
+      request.requestDeviceIdentifier,
+      request.requestDeviceType,
+      request.requestIp,
+      request.accessCode,
+      request.publicKey,
+      request.key,
+      request.masterPasswordHash,
+      request.approved === null ? null : (request.approved ? 1 : 0),
+      request.createdAt,
+      request.responseDate,
+      request.responseDeviceIdentifier
+    ).run();
+  }
+
+  async getAuthRequestById(id: string): Promise<AuthRequest | null> {
+    const row = await this.db
+      .prepare(
+        'SELECT id, user_id, request_device_identifier, request_device_type, request_ip, access_code, public_key, key, master_password_hash, approved, created_at, response_date, response_device_identifier ' +
+        'FROM auth_requests WHERE id = ? LIMIT 1'
+      )
+      .bind(id)
+      .first<any>();
+    if (!row) return null;
+    return {
+      id: row.id,
+      userId: row.user_id,
+      requestDeviceIdentifier: row.request_device_identifier,
+      requestDeviceType: Number(row.request_device_type || 0),
+      requestIp: row.request_ip,
+      accessCode: row.access_code,
+      publicKey: row.public_key,
+      key: row.key ?? null,
+      masterPasswordHash: row.master_password_hash ?? null,
+      approved: row.approved === null || row.approved === undefined ? null : !!row.approved,
+      createdAt: row.created_at,
+      responseDate: row.response_date ?? null,
+      responseDeviceIdentifier: row.response_device_identifier ?? null,
+    };
+  }
+
+  async getAuthRequestByIdForUser(id: string, userId: string): Promise<AuthRequest | null> {
+    const row = await this.db
+      .prepare(
+        'SELECT id, user_id, request_device_identifier, request_device_type, request_ip, access_code, public_key, key, master_password_hash, approved, created_at, response_date, response_device_identifier ' +
+        'FROM auth_requests WHERE id = ? AND user_id = ? LIMIT 1'
+      )
+      .bind(id, userId)
+      .first<any>();
+    if (!row) return null;
+    return {
+      id: row.id,
+      userId: row.user_id,
+      requestDeviceIdentifier: row.request_device_identifier,
+      requestDeviceType: Number(row.request_device_type || 0),
+      requestIp: row.request_ip,
+      accessCode: row.access_code,
+      publicKey: row.public_key,
+      key: row.key ?? null,
+      masterPasswordHash: row.master_password_hash ?? null,
+      approved: row.approved === null || row.approved === undefined ? null : !!row.approved,
+      createdAt: row.created_at,
+      responseDate: row.response_date ?? null,
+      responseDeviceIdentifier: row.response_device_identifier ?? null,
+    };
+  }
+
+  async listPendingAuthRequestsByUserId(userId: string): Promise<AuthRequest[]> {
+    const res = await this.db
+      .prepare(
+        'SELECT id, user_id, request_device_identifier, request_device_type, request_ip, access_code, public_key, key, master_password_hash, approved, created_at, response_date, response_device_identifier ' +
+        'FROM auth_requests WHERE user_id = ? AND approved IS NULL ORDER BY created_at DESC'
+      )
+      .bind(userId)
+      .all<any>();
+    return (res.results || []).map(row => ({
+      id: row.id,
+      userId: row.user_id,
+      requestDeviceIdentifier: row.request_device_identifier,
+      requestDeviceType: Number(row.request_device_type || 0),
+      requestIp: row.request_ip,
+      accessCode: row.access_code,
+      publicKey: row.public_key,
+      key: row.key ?? null,
+      masterPasswordHash: row.master_password_hash ?? null,
+      approved: row.approved === null || row.approved === undefined ? null : !!row.approved,
+      createdAt: row.created_at,
+      responseDate: row.response_date ?? null,
+      responseDeviceIdentifier: row.response_device_identifier ?? null,
+    }));
+  }
+
+  async updateAuthRequestResponse(
+    id: string,
+    userId: string,
+    approved: boolean,
+    responseDeviceIdentifier: string | null,
+    key: string | null,
+    masterPasswordHash: string | null
+  ): Promise<void> {
+    const responseDate = new Date().toISOString();
+    await this.db.prepare(
+      'UPDATE auth_requests SET approved = ?, response_device_identifier = ?, response_date = ?, key = ?, master_password_hash = ? ' +
+      'WHERE id = ? AND user_id = ?'
+    ).bind(approved ? 1 : 0, responseDeviceIdentifier, responseDate, key, masterPasswordHash, id, userId).run();
+  }
+
+  async deleteAuthRequest(id: string): Promise<void> {
+    await this.db.prepare('DELETE FROM auth_requests WHERE id = ?').bind(id).run();
   }
 
   async getTrustedDeviceTokenSummariesByUserId(userId: string): Promise<TrustedDeviceTokenSummary[]> {

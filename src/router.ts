@@ -81,6 +81,13 @@ import {
 
 // Import handler
 import { handleCiphersImport } from './handlers/import';
+import {
+  handleCreateAuthRequest,
+  handleGetAuthRequestResponse,
+  handleGetAuthRequestsPending,
+  handleGetAuthRequest,
+  handleUpdateAuthRequest,
+} from './handlers/auth_requests';
 
 // Attachment handlers
 import {
@@ -337,6 +344,16 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
       const sendId = sendDownloadMatch[1];
       const fileId = sendDownloadMatch[2];
       return handleDownloadSendFile(request, env, sendId, fileId);
+    }
+
+    if (path === '/api/auth-requests' && method === 'POST') {
+      return handleCreateAuthRequest(request, env);
+    }
+
+    const authResponseMatch = path.match(/^\/api\/auth-requests\/([a-f0-9-]+)\/response$/i);
+    if (authResponseMatch && method === 'GET') {
+      const authRequestId = authResponseMatch[1];
+      return handleGetAuthRequestResponse(request, env, authRequestId);
     }
 
     // Notifications hub (stub - no auth required, return 200 for connection)
@@ -625,9 +642,19 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
       if (method === 'DELETE') return handleDeleteFolder(request, env, userId, folderId);
     }
 
-    // Auth requests endpoint (stub - we don't support passwordless login)
-    if (path.startsWith('/api/auth-requests')) {
-      return jsonResponse({ data: [], object: 'list', continuationToken: null });
+    if (path === '/api/auth-requests' && method === 'GET') {
+      return handleGetAuthRequestsPending(request, env, userId);
+    }
+
+    if (path === '/api/auth-requests/pending' && method === 'GET') {
+      return handleGetAuthRequestsPending(request, env, userId);
+    }
+
+    const authRequestMatch = path.match(/^\/api\/auth-requests\/([a-f0-9-]+)$/i);
+    if (authRequestMatch) {
+      const authRequestId = authRequestMatch[1];
+      if (method === 'GET') return handleGetAuthRequest(request, env, userId, authRequestId);
+      if (method === 'PUT') return handleUpdateAuthRequest(request, env, userId, authRequestId);
     }
 
     // Collections endpoint (stub - no organization support)

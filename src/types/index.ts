@@ -192,6 +192,22 @@ export interface Device {
   pushUuid?: string | null;
 }
 
+export interface AuthRequest {
+  id: string;
+  userId: string;
+  requestDeviceIdentifier: string;
+  requestDeviceType: number;
+  requestIp: string;
+  accessCode: string;
+  publicKey: string;
+  key: string | null;
+  masterPasswordHash: string | null;
+  approved: boolean | null;
+  createdAt: string;
+  responseDate: string | null;
+  responseDeviceIdentifier: string | null;
+}
+
 export interface TrustedDeviceTokenSummary {
   deviceIdentifier: string;
   expiresAt: number;

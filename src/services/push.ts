@@ -225,3 +225,61 @@ export async function sendLoginPush(
   };
   await sendToPushRelay(env, payload);
 }
+
+export async function sendAuthRequestPush(
+  env: Env,
+  storage: StorageService,
+  userId: string,
+  authRequestId: string,
+  actingDeviceIdentifier: string | null
+): Promise<void> {
+  if (!isPushEnabled(env)) return;
+  const hasDevice = await storage.userHasPushDevice(userId);
+  if (!hasDevice) return;
+  const actingDevice = actingDeviceIdentifier
+    ? await storage.getDeviceByUserIdAndIdentifier(userId, actingDeviceIdentifier)
+    : null;
+  const payload = {
+    userId: userId,
+    organizationId: null,
+    deviceId: actingDevice?.pushUuid ?? null,
+    identifier: actingDevice?.deviceIdentifier ?? null,
+    type: PushUpdateType.AuthRequest,
+    payload: {
+      userId: userId,
+      id: authRequestId,
+    },
+    clientType: null,
+    installationId: null,
+  };
+  await sendToPushRelay(env, payload);
+}
+
+export async function sendAuthRequestResponsePush(
+  env: Env,
+  storage: StorageService,
+  userId: string,
+  authRequestId: string,
+  actingDeviceIdentifier: string | null
+): Promise<void> {
+  if (!isPushEnabled(env)) return;
+  const hasDevice = await storage.userHasPushDevice(userId);
+  if (!hasDevice) return;
+  const actingDevice = actingDeviceIdentifier
+    ? await storage.getDeviceByUserIdAndIdentifier(userId, actingDeviceIdentifier)
+    : null;
+  const payload = {
+    userId: userId,
+    organizationId: null,
+    deviceId: actingDevice?.pushUuid ?? null,
+    identifier: actingDevice?.deviceIdentifier ?? null,
+    type: PushUpdateType.AuthRequestResponse,
+    payload: {
+      userId: userId,
+      id: authRequestId,
+    },
+    clientType: null,
+    installationId: null,
+  };
+  await sendToPushRelay(env, payload);
+}

@@ -1,9 +1,5 @@
 PRAGMA foreign_keys = ON;
 
--- IMPORTANT:
--- Keep this file in sync with src/services/storage.ts (SCHEMA_STATEMENTS).
--- Any new table/column/index must be added to both places together.
-
 CREATE TABLE IF NOT EXISTS config (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL
@@ -30,7 +26,6 @@ CREATE TABLE IF NOT EXISTS users (
   updated_at TEXT NOT NULL
 );
 
--- Per-user sync revision date
 CREATE TABLE IF NOT EXISTS user_revisions (
   user_id TEXT PRIMARY KEY,
   revision_date TEXT NOT NULL,
@@ -152,6 +147,25 @@ CREATE TABLE IF NOT EXISTS devices (
 );
 CREATE INDEX IF NOT EXISTS idx_devices_user_updated ON devices(user_id, updated_at);
 
+CREATE TABLE IF NOT EXISTS auth_requests (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  request_device_identifier TEXT NOT NULL,
+  request_device_type INTEGER NOT NULL,
+  request_ip TEXT NOT NULL,
+  access_code TEXT NOT NULL,
+  public_key TEXT NOT NULL,
+  key TEXT,
+  master_password_hash TEXT,
+  approved INTEGER,
+  created_at TEXT NOT NULL,
+  response_date TEXT,
+  response_device_identifier TEXT,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_auth_requests_user_created ON auth_requests(user_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_auth_requests_user_pending ON auth_requests(user_id, approved, created_at);
+
 CREATE TABLE IF NOT EXISTS trusted_two_factor_device_tokens (
   token TEXT PRIMARY KEY,
   user_id TEXT NOT NULL,
@@ -162,7 +176,6 @@ CREATE TABLE IF NOT EXISTS trusted_two_factor_device_tokens (
 CREATE INDEX IF NOT EXISTS idx_trusted_two_factor_device_tokens_user_device
   ON trusted_two_factor_device_tokens(user_id, device_identifier);
 
--- Rate limiting
 CREATE TABLE IF NOT EXISTS login_attempts_ip (
   ip TEXT PRIMARY KEY,
   attempts INTEGER NOT NULL,
